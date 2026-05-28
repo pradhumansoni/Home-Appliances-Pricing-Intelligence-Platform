@@ -1,17 +1,38 @@
 """
-This file is used to save all the selectors used to parse data from raw HTML 
-to cleaned csv files.
+Selectors used to parse raw HTML into structured CSV data.
 """
 
-NAME = {0: "h2"}
+NAME = {
+    'tag': 'h2'
+}
 
-PRICE =  {0 : ("span" , {'class':'price'})}
+PRICE = {
+    'tag': 'span',
+    'attrs': {
+        'class': 'price'
+    }
+}
 
+RATING = {
+    'container_tag': 'div',
+    'container_attrs': {
+        'class': 'rating'
+    },
 
-RATING = {0: ('div', {'class': 'rating'}) ,
-           1: ('span' ,{'class':'sm-rating'}) ,
-             2: 'style'}
+    'value_tag': 'span',
+    'value_attrs': {
+        'class': 'sm-rating'
+    },
 
+    'style_tag': 'style'
+}
 
-FEATURES = {0: ('ul' , {'class': 'sm-feat specs'}),
-            1: 'li'}
+FEATURES = {
+    'container_tag': 'ul',
+
+    'container_attrs': {
+        'class': 'sm-feat specs'
+    },
+
+    'item_tag': 'li'
+}
