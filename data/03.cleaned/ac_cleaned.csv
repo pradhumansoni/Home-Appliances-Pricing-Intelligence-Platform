@@ -1,4 +1,4 @@
-brand,model_year,product,price,rating,ac_type,capacity,Dehumidification,Turbo Mode,Air Swing,Self Diagnosis,Memory Feature,LED Panel Display,Night Glow Buttons,Wi-Fi Connectivity,APP Control,Auto Clean,Hidden Panel Display,Voice Control,PM 2.5 Filter,inverter,star_rating
+brand,model_year,product,price,user_rating,ac_type,capacity,Dehumidification,Turbo Mode,Air Swing,Self Diagnosis,Memory Feature,LED Panel Display,Night Glow Buttons,Wi-Fi Connectivity,APP Control,Auto Clean,Hidden Panel Display,Voice Control,PM 2.5 Filter,inverter,star_rating
 Whirlpool,,AC,24990,4.65,Split,1.5,0,1,1,1,0,0,1,0,0,0,0,0,0,1,5
 Carrier,2024,AC,22990,4.55,Split,1.5,1,1,0,0,0,0,0,0,0,1,1,0,0,1,3
 O General,,AC,67990,4.1,Split,1.5,1,1,1,1,0,1,0,0,0,0,0,0,0,1,5
