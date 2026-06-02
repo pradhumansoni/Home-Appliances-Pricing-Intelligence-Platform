@@ -54,7 +54,8 @@ Required Fields:
 
 - Product Name
 - Brand
-- Category
+- Appliance Category         # stored as `product` column; currently "AC", will expand to other appliances
+- Model Year                 # stored as `model_year` column; ~16% missing in current scrape
 - Current Price
 - Energy Rating
 - Capacity
@@ -65,6 +66,30 @@ Required Fields:
 
 Target Variable:
 Price
+
+# Engineered Fields
+
+Two columns are derived from the raw product `name` field during cleaning and have project-specific handling rules. Note: the `name` column is dropped from the final dataset, so these fields cannot be re-extracted without re-merging with raw scraped data.
+
+## `product` (appliance category)
+- Currently constant "AC" (only ACs were scraped so far)
+- Purpose: enables the platform to scale to other appliances (refrigerators, washing machines, etc.) without restructuring
+- **In training:** one-hot encode — treat as a categorical feature even though it has zero variance today; future-proofs the pipeline
+- **In the app:** drives the appliance-category dropdown in the user flow
+- Do NOT drop the column; constant value today is acceptable because the same pipeline will be reused for other appliances
+
+## `model_year` (year of manufacture)
+- Extracted via regex `\b(201[0-9]|202[0-9])\b` from the product name
+- 16.4% of rows are missing — these need explicit handling
+- **In EDA:** check year-vs-price relationship (expect newer = more expensive), and check whether missingness correlates with brand or price tier
+- **Missing-value strategy (decided):**
+  - Impute with **brand-level median year** (e.g., all missing Voltas rows → median year of known Voltas rows)
+  - Add a binary `model_year_missing` indicator column so the model can learn whether "unknown year" itself carries signal
+- **Feature transformation (decided):**
+  - Transform to `age = current_year - model_year` — captures depreciation, stronger signal than raw year
+  - `current_year` is determined at training time and again at inference time, so the transformation is consistent
+- **In the inference API:** if the user does not provide model_year, treat as missing → apply the same brand-median imputation + missing-indicator logic from training
+- **In the pricing intelligence engine:** age (or year) affects fair price — newer models of identical specs cost more, which is part of the "branding vs specs" decomposition in the explainability layer
 
 # Machine Learning Roadmap
 
@@ -125,6 +150,7 @@ backend/
 4. Handle missing values.
 5. Standardize specifications.
 6. Perform EDA.
+6.5. EDA specifically for `product` (note as constant) and `model_year` (year distribution, missingness pattern, year-vs-price scatter).
 7. Create features.
 8. Train baseline regression model.
 9. Train advanced models.
