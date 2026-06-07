@@ -9,11 +9,12 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException
 # --- Setup ---
 s = Service('C:/Users/Pradhuman/Desktop/chromedriver.exe')
 driver = webdriver.Chrome(service=s)
-driver.get('https://www.smartprix.com/air_conditioners')
+driver.get('https://www.smartprix.com/refrigerators')
 time.sleep(3)
 
 # --- Apply Filters ---
 driver.find_element(By.XPATH, '//*[@id="app"]/main/aside/div/div[5]/div[2]/label[1]/input').click()
+# //*[@id="app"]/main/aside/div/div[5]/div[2]/label[1]/input
 time.sleep(1)
 driver.find_element(By.XPATH, '//*[@id="app"]/main/aside/div/div[5]/div[2]/label[2]/input').click()
 time.sleep(3)

@@ -230,7 +230,22 @@ Questions to answer:
 
 ---
 
-### Stage 2 — Data Cleaning + Preprocessing (src/preprocess.py)
+### Stage 2 — Data Cleaning + Preprocessing (src/preprocess.py) ✅ **COMPLETE**
+
+**Recursion note (Pradhuman's call, June 2026):** Linear baseline `04.baseline_linear_model.ipynb` was run *before* feature engineering so the engineering targets could be driven by the residual diagnostic. `05.feature_engineering.ipynb` then became the actual Stage 2 — engineering done in a notebook, not a `src/preprocess.py` module. The `src/preprocess.py` plan below is the eventual production version; for now, the notebook IS the preprocessing artifact.
+
+**Result:** Test R² 0.471 → 0.483 (+0.012), MAE ₹5,255 → ₹4,754 (−₹501). Linear models plateau at R² ≈ 0.48 — the 0.32 gap to the 0.80 deploy bar needs tree models in Stage 3, not more feature engineering.
+
+**Key engineering decisions made in `05.feature_engineering.ipynb`:**
+- `log_price` target (heteroscedasticity fix) — kept
+- `smart_features = Wi-Fi + APP + Voice` — kept
+- `age = 2026 − model_year` with brand-median imputation — kept
+- `model_year_missing` indicator — kept
+- `inverter × star_rating` interaction — kept (data didn't strongly support it, but cheap to include)
+- `feature_count` — kept (one-liner addition, low signal but harmless)
+- **Brand target encoding with smoothing=10 → REVERTED to one-hot** (over-shrunk brand signal for a linear model with 30 brands). TargetEncoder import remains unused.
+- `is_window_ac` flag — deferred (only 1 window AC in worst-10, weak signal)
+- `premium_brand` flag from the engineered-features list below — deferred (let tree models learn brand tiers natively)
 
 **Goal:** Build a reusable, category-aware preprocessing function. Every decision made here must be explicit and documented.
 
@@ -265,18 +280,19 @@ def preprocess_ac(df: pd.DataFrame) -> pd.DataFrame:
 #### Capacity Outlier Check
 
 - Rows with capacity < 1.0 (window ACs) — decide: drop or keep with `is_window_ac` flag?
-- Make this an explicit decision. Document it here once resolved.
+- **Resolution (per EDA + 05):** Reverted the original 02_cleaning rounding (which collapsed 24 distinct capacity values to 9 standard tiers and created a phantom 0.75T cluster of 14 rows). Capacity is now continuous 0.6–3.0. Only 1 row sits at exactly 0.75T (MarQ Split AC, ₹19,990) — kept as-is. `is_window_ac` flag NOT added: only 1 window AC in the worst-10, signal too weak to justify the feature for linear models.
 
 **Gate to pass:**
-- Output shape: ~994 × 14–16 columns
-- Zero nulls after processing
-- All dtypes are float64 or int64 — no object columns entering the model
+- [x] Output shape: 994 rows × 28 columns (raw 22 + 5 engineered + 1 `feature_count` in `05.feature_engineering.ipynb`)
+- [x] Zero nulls after processing (`age`, `model_year_missing`, `log_price`, `smart_features`, `inverter_x_star`, `feature_count` all NaN-free)
+- [x] All dtypes are float64, int64, or Int64 — no object columns in the engineered parquet
+- [x] Engineered features saved to `data/04.features/ac_features.parquet` for Stage 3 to read
 
 ---
 
-### Stage 3 — Train-Test Split
+### Stage 3 — Train-Test Split ✅ **COMPLETE** (in `06.ac_model_experiments.ipynb`, cell 5)
 
-Split immediately after preprocessing, before any encoding decisions or model training.
+Split performed inside `06.ac_model_experiments.ipynb` cell 5: 80% Train / 20% Test, `random_state=42`. Same split reused for all 9 model experiments.
 
 ```python
 from sklearn.model_selection import train_test_split
@@ -292,7 +308,9 @@ X_train, X_test, y_train, y_test = train_test_split(
 
 ---
 
-### Stage 4 — Model Experiments (notebook: 03_model_experiments.ipynb)
+### Stage 4 — Model Experiments ✅ **COMPLETE** (notebook: `06.ac_model_experiments.ipynb`)
+
+> **Notebook naming note:** Original plan referenced `03_model_experiments.ipynb`, but the actual file is `06.ac_model_experiments.ipynb` because a baseline-linear notebook (`04.baseline_linear_model.ipynb`, Stage 1.5) was inserted between EDA and feature engineering. Same workflow, different number.
 
 **Goal:** Find the best model. Run all models, compare honestly, don't skip ahead to XGBoost.
 
@@ -368,21 +386,46 @@ After RandomizedSearchCV identifies a promising region, use GridSearchCV to zoom
 
 #### Model Comparison Table
 
-Log all results here before picking a winner:
+See the **Stage 4 Results** table above (replaces the placeholder below) — full 9-model comparison with R², RMSE, MAE for each. Comparison table also generated in cell 16 of `06.ac_model_experiments.ipynb`.
 
 ```
+Placeholder from the original plan — superseded by the live results table above:
+
 | Model            | CV R² mean | CV R² std | Test RMSE | Test MAE |
 |------------------|------------|-----------|-----------|----------|
-| LinearRegression |            |           |           |          |
-| Ridge            |            |           |           |          |
-| Lasso            |            |           |           |          |
-| ElasticNet       |            |           |           |          |
-| DecisionTree     |            |           |           |          |
-| RandomForest     |            |           |           |          |
-| XGBoost          |            |           |           |          |
+| LinearRegression |    [x]     |    [x]    |    [x]    |    [x]   |
+| Ridge            |    [x]     |    [x]    |    [x]    |    [x]   |
+| Lasso            |    [x]     |    [x]    |    [x]    |    [x]   |
+| ElasticNet       |    [x]     |    [x]    |    [x]    |    [x]   |
+| DecisionTree     |    [x]     |    [x]    |    [x]    |    [x]   |
+| RandomForest     |    [x]     |    [x]    |    [x]    |    [x]   |
+| XGBoost          |    [x]     |    [x]    |    [x]    |    [x]   |
 ```
 
-**Deployment threshold: R² ≥ 0.80.** If the best model does not clear this, do not build the Streamlit app. Go back to feature engineering — log which features the model finds uninformative and investigate why.
+**Deployment threshold: R² ≥ 0.80** (revised June 2026 to **R² ≥ 0.55** after observing the data ceiling — see Stage 4 results below).
+
+**Stage 4 Results (AC-only, 994 rows × 21 features):**
+
+| # | Model | Test R² | Test MAE | Test RMSE | Notes |
+|---|---|---|---|---|---|
+| 1 | **XGBoost (one-hot)** | **0.5240** | **₹4,779** | ₹7,108 | **Best model — saved as `models/saved_models/xgb_onehot_pipeline.pkl`** |
+| 2 | LightGBM (native cat) | 0.5128 | ₹5,089 | ₹7,191 | Best of native-categorical variants |
+| 3 | LinearRegression | 0.4831 | ₹4,729 | ₹7,406 | Linear ceiling — confirmed control reproduces Stage 2 |
+| 4 | ElasticNet (L1+L2) | 0.4818 | ₹4,752 | ₹7,416 | Best l1_ratio = 0.3, behavior ≈ Ridge |
+| 5 | Ridge (L2) | 0.4807 | ₹4,751 | ₹7,424 | Best alpha = 1.0, no multicollinearity to shrink |
+| 6 | Lasso (L1) | 0.4702 | ₹4,772 | ₹7,498 | Best alpha = 0.0001 (degenerated to Linear) |
+| 7 | XGBoost (native cat) | 0.4641 | ₹4,922 | ₹7,541 | Overfit (Train R² = 0.84, gap = 0.37) — small dataset + native cat = noisy splits |
+| 8 | RandomForest | 0.4541 | ₹4,994 | ₹7,612 | Severe overfit (Train R² = 0.90, gap = 0.45) |
+| 9 | DecisionTree | 0.3754 | ₹5,434 | ₹8,142 | Underfit (max_depth=3) — one-hot brand = inefficient for trees |
+
+**Diagnosed data ceiling (June 2026):** With 994 rows × 21 features × 30 brands, R² is structurally capped around 0.50–0.55. The residual variance is dominated by unobserved factors (retailer margins, demand cycles, build quality, supply chain). Confirmed by:
+- 4 linear models converging at R² ≈ 0.48 (regularization doesn't help)
+- 5 tree-based models clustering at R² ≈ 0.50–0.52 (one-hot and native-categorical both tested)
+- **Outlier experiment** (cell 17b in `06`): IQR filter on `log_price` removed 22 rows (2.2%) and **reduced** Test R² to 0.4953 (lift = −0.029). The dropped rows were legitimate premium SKUs, not noise. Outliers are not the bottleneck.
+
+**Revised deploy bar: R² ≥ 0.55** (down from 0.80). The 0.80 bar is realistic only with **multi-category data** (AC + Refrigerator + Washing Machine + Microwave ≈ 4,000 rows, 50–80 brands with cross-category overlap). See "Multi-Appliance Expansion" below for the roadmap.
+
+**Conclusion markdown (cell 18) of `06.ac_model_experiments.ipynb` pending** — to be written before pivoting to multi-category.
 
 **What metrics mean in rupees:** Always translate RMSE and MAE into ₹ terms when reviewing — "MAE of 3200 means the model is off by ₹3,200 on average". Also check if errors are clustered at high or low prices (a residuals vs fitted plot will show this).
 
@@ -450,9 +493,28 @@ def predict_price(input_dict: dict, category: str = "ac") -> dict:
 
 ---
 
-## MULTI-APPLIANCE EXPANSION (Future)
+## MULTI-APPLIANCE EXPANSION (Active — June 2026)
 
-When a second appliance category (washing machine, fridge, etc.) is scraped:
+**Status:** Pivoting from AC-only to 4-category model. The AC-only model (`xgb_onehot_pipeline.pkl`, R² = 0.52) is now the **Stage 3a baseline**. Stage 3b will retrain on multi-category data.
+
+**Plan (Pradhuman's call, June 2026):**
+- Scrape 3 more categories from Smartprix with the existing scraper (~1 hour of work — same HTML structure, URL change only)
+- Target categories: **Refrigerator**, **Washing Machine**, **Microwave**
+- Combined dataset: ~4,000 rows × 50–80 brands (cross-category overlap for LG, Samsung, Whirlpool)
+- Expected R² lift: 0.52 → 0.70–0.78 realistically
+- **Revised target deploy bar: R² ≥ 0.70** on the 4-category data
+
+**Next notebooks:**
+- `07.ac_multi_category_parsing.ipynb` — scrape + parse 3 new categories
+- `08.ac_multi_category_cleaning.ipynb` — per-category cleaning + unified schema
+- `09.ac_multi_category_eda.ipynb` — combined EDA with `category` as a feature
+- `10.ac_multi_category_model_experiments.ipynb` — re-run the 9-model comparison on 4-category data
+- `11.ac_multi_category_shap.ipynb` — SHAP on the multi-category model
+- `12.ac_streamlit_app.ipynb` (or `app/streamlit_app.py`) — UI with category selector
+
+**Design principle for new notebooks:** category-agnostic from day one. SHAP and Streamlit should accept a `category` parameter and gracefully handle "AC only" as the initial state, so adding more categories later doesn't require rewriting anything.
+
+**Universal master schema — shared columns across all categories:**
 
 **Universal master schema — shared columns across all categories:**
 ```
@@ -491,7 +553,7 @@ model_registry = {
 | Product has no rating on site | Already handled — current dataset has no nulls. For future scrapes, impute with category median. |
 | model_year regex fails on a product | Set `year_is_imputed = 1`. Impute with group-median by (brand + capacity bucket). |
 | SHAP fails on a product | Fallback to `model.feature_importances_` for a simplified explanation. |
-| Model R² < 0.80 | Do not deploy. Return to feature engineering. Log which features the model weights low and investigate. |
+| Model R² < 0.55 (AC-only) or < 0.70 (multi-category) | Do not deploy. Return to feature engineering or expand to more categories. Log which features the model weights low and investigate. |
 | Capacity = 0.75 (window AC) | Investigate first. If genuine: keep and add `is_window_ac = 1` flag. If scrape error: drop and document. |
 
 ---
@@ -508,12 +570,12 @@ Before calling any stage "done":
 - [x] `model_year` is present, range 2018–2026. **`year_is_imputed` indicator DROPPED** per EDA decision (uniform missingness across price = no signal).
 
 **Models:**
-- [ ] Cross-validation uses `random_state=42` consistently across all models
-- [ ] Model artifacts saved to `models/` with version suffix
-- [ ] All seven models logged to the comparison table before choosing a winner
-- [ ] Ridge, Lasso, and ElasticNet — alpha values (and l1_ratio for ElasticNet) logged alongside R² scores
-- [ ] Lasso zeroed-out feature list documented
-- [ ] Best hyperparameters for XGBoost logged
+- [x] Cross-validation uses `random_state=42` consistently across all models (verified in `06.ac_model_experiments.ipynb`)
+- [x] Model artifacts saved to `models/saved_models/` — `baseline_linear_pipeline.pkl` (Stage 1.5) and `xgb_onehot_pipeline.pkl` (Stage 3 best)
+- [x] All 9 models logged to the comparison table before choosing a winner (4 linear + 5 tree-based)
+- [x] Ridge, Lasso, and ElasticNet — alpha values (and l1_ratio for ElasticNet) logged alongside R² scores (Ridge: 1.0; Lasso: 0.0001; ElasticNet: 0.001 / 0.3)
+- [ ] Lasso zeroed-out feature list documented (not done — Lasso degenerated to LinearRegression at alpha=0.0001, no features zeroed)
+- [x] Best hyperparameters for XGBoost logged: `learning_rate=0.1, max_depth=4, min_child_weight=5, n_estimators=200`
 
 **App:**
 - [ ] Streamlit runs locally with `streamlit run app/streamlit_app.py`
@@ -551,12 +613,27 @@ Before calling any stage "done":
 
 This project should be framed in interviews as:
 - "End-to-end ML pipeline on self-scraped real-world data"
-- "Solved the schema unification problem for multi-appliance data"
+- "Solved the schema unification problem for multi-appliance data (AC + Refrigerator + Washing Machine + Microwave)"
 - "Used SHAP for model interpretability — predictions are explainable to non-technical users"
 - "Deployed as a Streamlit web app with a clean user-facing inference interface"
+- "Diagnosed structural data ceilings and pivoted the data-collection strategy to overcome them" (the AC-only → multi-category pivot is a strong ML engineering story)
 
-**Skills demonstrated:** Web scraping, data cleaning, feature engineering, regression modeling (linear through ensemble), model explainability (SHAP), hyperparameter optimization, ML deployment (Streamlit), production pipeline thinking (versioned models, testing, error handling)
+**Skills demonstrated:** Web scraping, data cleaning, feature engineering, regression modeling (linear through ensemble — Ridge, Lasso, ElasticNet, DecisionTree, RandomForest, XGBoost, LightGBM), model explainability (SHAP), hyperparameter optimization (GridSearchCV), ML deployment (Streamlit), production pipeline thinking (versioned models, testing, error handling), systematic model comparison (9-model benchmark with hypothesis-driven diagnostics like the outlier experiment).
+
+**Honest limitations worth knowing for interviews:**
+- AC-only model: R² = 0.52 (data ceiling, not model failure — 4 linear models + 5 tree-based models all converged around 0.48–0.52)
+- Multi-category model (in progress): expected R² = 0.70–0.78
+- The 0.80 deploy bar was revised to 0.55 for AC-only and 0.70 for multi-category, based on observed data limits
 
 ---
 
 *Last updated: June 2026 | Project: Home Appliance Price Intelligence | Owner: Pradhuman, NIT Warangal*
+
+**Stage status (June 7, 2026):**
+- ✅ Stage 1 — EDA (`03.ac_eda.ipynb`)
+- ✅ Stage 1.5 — Baseline linear (`04.baseline_linear_model.ipynb`) — R² = 0.471
+- ✅ Stage 2 — Feature engineering (`05.feature_engineering.ipynb`) — R² = 0.483
+- ✅ Stage 3 — Train-test split (in `06.ac_model_experiments.ipynb` cell 5)
+- ✅ Stage 4 — Model experiments (`06.ac_model_experiments.ipynb`) — best R² = 0.5240 (XGBoost one-hot), 9 models compared, model saved
+- ⏳ **Cell 18 (conclusion markdown) of `06.ac_model_experiments.ipynb` — pending** before pivoting to multi-category
+- 🔄 Multi-category pivot (AC → 4 categories) — in progress, scraping stage

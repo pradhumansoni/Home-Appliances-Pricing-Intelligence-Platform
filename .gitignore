@@ -21,3 +21,6 @@ env/
 # IDE
 .vscode/
 .idea/
+
+#md file
+/CLAUDE_V3_Streamlit.md
