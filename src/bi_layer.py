@@ -16,8 +16,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 
 # Model path
-MODEL_PATH = Path(r"D:/Study/data_science/Appliance Intelligence Price Tracker and Recommender/models/saved_models/multi_category_xgb_pipeline.pkl")
-
+MODEL_PATH = Path(__file__).parent.parent / "models/saved_models/multi_category_xgb_pipeline.pkl"
 # Load the trained model pipeline
 _pipeline = None
 _preprocessor = None
@@ -125,7 +124,7 @@ def get_pricing_verdict(observed_price: float, predicted_price: float) -> Dict[s
 
 # 4. SHAP Explanation Function
 
-def get_shap_explanation(features_df: pd.DataFrame, top_n: int = 10) -> Dict[str, Any]:
+def get_shap_explanation(features_df: pd.DataFrame, top_n: int = 15) -> Dict[str, Any]:
     """
     Get SHAP explanation for a prediction.
     
