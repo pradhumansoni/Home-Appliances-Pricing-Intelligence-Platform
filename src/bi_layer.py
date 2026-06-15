@@ -365,18 +365,17 @@ def _preprocess_user_input(user_friendly_features: Dict[str, Any]) -> Dict[str, 
 
     # 3. Handle Generic Capacity (Capacity_Value, Capacity_Unit) and map to specific 'capacity_X'
     capacity_value = user_friendly_features.get('capacity_value')
-    capacity_unit = user_friendly_features.get('capacity_unit', '').lower().strip()
 
     if capacity_value is not None:
         try:
             capacity_value = float(capacity_value)
-            if category == 'air conditioner' and capacity_unit == 'ton':
+            if category == 'air conditioner':
                 processed_features['capacity_ac_tons'] = capacity_value
-            elif category == 'refrigerator' and capacity_unit == 'l':
+            elif category == 'refrigerator':
                 processed_features['capacity_ref_liters'] = capacity_value
-            elif category == 'washing machine' and capacity_unit == 'kg':
+            elif category == 'washing machine':
                 processed_features['capacity_wm_kg'] = capacity_value
-            # Other categories/units would use defaults
+            
         except ValueError:
             pass # Default will be used if conversion fails
 

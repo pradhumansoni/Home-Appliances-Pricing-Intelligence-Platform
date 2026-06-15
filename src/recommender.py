@@ -27,13 +27,27 @@ class ApplianceRecommender:
         self.pool['value_score'] = self.pool['fair_price'] / self.pool['actual_price']
 
     def get_recommendations(self, user_input: Dict[str, Any], n=3) -> List[Dict]:
+        category = user_input.get('category')
+        capacity = user_input.get('capacity_value')
+        
+        # Map category to the specific capacity column in your pool
+        category_capacity_map = {
+            'AC': 'capacity_ac_tons',
+            'Refrigerator': 'capacity_ref_litres',
+            'Washing Machine': 'capacity_wm_kg'
+        }
+        
+        # Get the correct column name based on the category
+        capacity_col = category_capacity_map.get(category)
+        
+        if not capacity_col:
+            return [] # Invalid category
+
         # 1. HARD CONSTRAINTS (The "Deal-Breakers")
-        # Only filter things that are physically or categorically impossible
-        mask = (self.pool['category'] == user_input.get('category')) & \
-            (self.pool['capacity_ac_tons'] == user_input.get('capacity_value'))
-        
+        # Hard Constraint: Filter by category and the SPECIFIC capacity column
+        mask = (self.pool['category'] == category) & (self.pool[capacity_col] == capacity)
         eligible_pool = self.pool[mask].copy()
-        
+            
         if eligible_pool.empty:
             return []
 
