@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 
 # Model path
-MODEL_PATH = Path(__file__).parent.parent / "models/saved_models/multi_category_xgb_pipeline.pkl"
+MODEL_PATH = Path(__file__).parent.parent / "models/saved_models/final_model.pkl"
 # Path to the training features DataFrame
 
 # We need this to derive default values for missing user inputs.
@@ -128,7 +128,7 @@ def build_feature_dataframe(user_features: Dict[str, Any]) -> pd.DataFrame:
     complete_features = _default_feature_values.copy()
 
     # Debug: Print the default features for comparison
-    print(f"[DEBUG BI] Default features for comparison: {complete_features}")
+    # print(f"[DEBUG BI] Default features for comparison: {complete_features}")
 
     # Iterate through the user-provided features and update our complete_features dictionary.
     # User-provided values will overwrite the defaults.
@@ -145,7 +145,7 @@ def build_feature_dataframe(user_features: Dict[str, Any]) -> pd.DataFrame:
     features_df = pd.DataFrame([complete_features], columns=_original_feature_order)
 
     # Debug: Print the final DataFrame's relevant columns
-    print(f"[DEBUG BI] Final DataFrame head for prediction:\n{features_df.head()}")
+    # print(f"[DEBUG BI] Final DataFrame head for prediction:\n{features_df.head()}")
 
 
     return features_df
@@ -570,7 +570,7 @@ def _preprocess_user_input(user_friendly_features: Dict[str, Any]) -> Dict[str, 
     # and are hard to calculate purely from user input. build_feature_dataframe will use defaults for these.
 
     # Debug: Print the processed features before returning
-    print(f"[DEBUG BI] Processed features (before build_feature_dataframe): {processed_features}")
+    # print(f"[DEBUG BI] Processed features (before build_feature_dataframe): {processed_features}")
     
     return processed_features
 
