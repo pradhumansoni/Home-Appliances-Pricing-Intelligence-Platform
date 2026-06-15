@@ -1,53 +1,56 @@
 import pandas as pd
 import numpy as np
-from typing import List, Dict, Any
+from sklearn.metrics.pairwise import cosine_similarity
 from pathlib import Path
+from typing import Dict, List, Any
+import joblib
 
-# Paths
-PROCESSED_DATA_PATH = Path(__file__).parent.parent / "data/03.cleaned/multi_appliances_cleaned_engineered.parquet"
+# Internal imports from your BI layer
+from src.bi_layer import build_feature_dataframe, _load_model
 
 class ApplianceRecommender:
     def __init__(self):
-        # Load the full cleaned dataset (which includes names and actual prices)
-        self.df = pd.read_parquet(PROCESSED_DATA_PATH)
+        # 1. Load Model and Data
+        self.pipeline, self.preprocessor, self.model, _ = _load_model()
         
-    def find_alternatives(self, user_input_features: Dict[str, Any], n_recommendations: int = 3) -> pd.DataFrame:
-        """
-        Finds the best alternative appliances based on similarity and value.
-        """
-        category = user_input_features.get('category')
-        target_capacity = user_input_features.get('capacity_value')
+        self.X_train = pd.read_parquet(Path("D:/Study/data_science/Appliance Intelligence Price Tracker and Recommender/models/dataset/X_train.parquet"))
+        self.y_train = pd.read_parquet(Path("D:/Study/data_science/Appliance Intelligence Price Tracker and Recommender/models/dataset/y_train.parquet"))
         
-        # 1. Filter by Category
-        filtered_df = self.df[self.df['category'].str.lower() == category.lower()].copy()
+        # 2. Pre-calculate the 'Market Pool'
+        self.pool = self.X_train.copy()
+        self.pool['actual_price'] = np.expm1(self.y_train['log_price'])
         
-        # 2. Filter by Capacity (±15% range)
-        # We need to map capacity_value to the correct column in the dataframe
-        cap_col = self._get_capacity_column(category)
-        if cap_col and target_capacity:
-            lower_bound = target_capacity * 0.85
-            upper_bound = target_capacity * 1.15
-            filtered_df = filtered_df[
-                (filtered_df[cap_col] >= lower_bound) & 
-                (filtered_df[cap_col] <= upper_bound)
-            ]
+        # 3. Calculate Fair Prices for the pool to find "Deals"
+        # We do this once at startup
+        log_preds = self.pipeline.predict(self.X_train)
+        self.pool['fair_price'] = np.expm1(log_preds)
+        self.pool['value_score'] = self.pool['fair_price'] / self.pool['actual_price']
 
-        # 3. Calculate "Value Score"
-        # Value = (Predicted Price / Actual Price)
-        # Higher is better (you get more than what you pay for)
-        # Note: We'll need to run predictions on the filtered_df if we haven't stored them
-        # For now, let's assume we use 'rating' and 'feature_count' as a proxy for value
+    def get_recommendations(self, user_input: Dict[str, Any], n=3) -> List[Dict]:
+        # 1. HARD CONSTRAINTS (The "Deal-Breakers")
+        # Only filter things that are physically or categorically impossible
+        mask = (self.pool['category'] == user_input.get('category')) & \
+            (self.pool['capacity_ac_tons'] == user_input.get('capacity_value'))
         
-        # 4. Calculate Similarity
-        # Simple Euclidean distance on key features: star_rating, has_inverter, etc.
-        # ... similarity logic here ...
+        eligible_pool = self.pool[mask].copy()
+        
+        if eligible_pool.empty:
+            return []
 
-        return filtered_df.head(n_recommendations)
-
-    def _get_capacity_column(self, category: str) -> str:
-        mapping = {
-            'air conditioner': 'capacity_ac_tons',
-            'refrigerator': 'capacity_ref_liters',
-            'washing machine': 'capacity_wm_kg'
-        }
-        return mapping.get(category.lower())
+        # 2. SOFT CONSTRAINTS (The "Preferences")
+        # We handle Brand, Star Rating, and Inverter via Similarity Math.
+        # If the user mentioned 'lg', the cosine_similarity will naturally 
+        # give higher scores to LG products, but it will still show others.
+        
+        user_encoded = self.preprocessor.transform(build_feature_dataframe(user_input))
+        pool_encoded = self.preprocessor.transform(eligible_pool.drop(columns=['actual_price', 'fair_price', 'value_score']))
+        
+        similarities = cosine_similarity(user_encoded, pool_encoded).flatten()
+        
+        # 3. THE VALUE BOOST
+        # Now, we find products that are:
+        # (Prefered Brand/Stars) + (Best Value for Money)
+        final_scores = (similarities * 0.7) + (eligible_pool['value_score'].values * 0.3)
+        
+        eligible_pool['recommendation_score'] = final_scores
+        return eligible_pool.sort_values('recommendation_score', ascending=False).head(n).to_dict('records')
