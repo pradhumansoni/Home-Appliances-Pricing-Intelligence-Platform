@@ -318,13 +318,13 @@ Streamlit Dashboard
 Clone the repository:
 
 ```bash
-git clone https://github.com/pradhumansoni/AI-Powered-Appliance-Pricing-Intelligence-Platform.git
+git clone https://github.com/pradhumansoni/Home-Appliances-Pricing-Intelligence-Platform.git
 ```
 
 Move into the project directory:
 
 ```bash
-cd AI-Powered-Appliance-Pricing-Intelligence-Platform/app
+cd Home-Appliances-Pricing-Intelligence-Platform/app
 ```
 
 Install dependencies:
