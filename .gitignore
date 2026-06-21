@@ -6,9 +6,6 @@ __pycache__/
 # Jupyter
 .ipynb_checkpoints/
 
-# Model artifacts (regenerate by re-running notebooks)
-models/saved_models/*.pkl
-models/saved_models/*.joblib
 
 # Virtual envs
 .venv/
