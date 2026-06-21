@@ -15,8 +15,8 @@ while root != root.parent:
 
 sys.path.insert(0, str(root))
 
-from src.bi_layer import _preprocess_user_input, build_feature_dataframe, predict_price, get_prediction_range, get_shap_explanation, interpret_brand_premium, get_pricing_verdict
-from src.recommender import ApplianceRecommender
+from src.bi_layer_improved import _preprocess_user_input, build_feature_dataframe, predict_price, get_prediction_range, get_shap_explanation, interpret_brand_premium, get_pricing_verdict
+from src.recommender_improved import ApplianceRecommender
 
 # --- 1. PAGE CONFIGURATION ---
 st.set_page_config(page_title="Smart Buy: AI Price & Deal Assistant", layout="wide")
@@ -141,25 +141,36 @@ def display_recommendations(recommendations, category, max_per_brand):
 def display_shap_contributions(shap_explanation, category, predicted_price):
     """
     Displays SHAP feature contributions in a clean, readable format.
-    Now shows category-specific top contributing features.
-    
-    IMPROVEMENT: Shows features in rupees with proper sign indicators.
+    Dynamically filters out metadata and cross-category features.
     """
     top_features = shap_explanation['top_features']
     
-    # Filter features that are NOT metadata/system features
-    # This makes the display more meaningful for users
+    # Base exclusions (metadata/system features)
     exclude_patterns = [
         'onehotencoder__', 'ordinalencoder__', 'standardscaler__',
         'features_above_avg', 'rating_above_avg', 'capacity_above_avg',
         'brand_frequency', 'smart_connectivity_score'
     ]
     
+    # Dynamically exclude features from other categories
+    # The 'category' variable comes from user_friendly_input['category'] 
+    # which is mapped to 'AC', 'Refrigerator', or 'WashingMachine'
+    if category == 'AC':
+        exclude_patterns.extend(['ref_', 'wm_', 'capacity_ref', 'capacity_wm'])
+    elif category == 'Refrigerator':
+        exclude_patterns.extend(['ac_', 'wm_', 'capacity_ac', 'capacity_wm'])
+    elif category == 'WashingMachine':
+        exclude_patterns.extend(['ac_', 'ref_', 'capacity_ac', 'capacity_ref'])
+    
     filtered_features = []
     for feature_name, contribution in top_features:
+        # Convert feature name to lowercase for reliable matching
+        feature_lower = feature_name.lower()
+        
         # Skip if it matches any exclude pattern
-        if any(pattern in feature_name.lower() for pattern in exclude_patterns):
+        if any(pattern in feature_lower for pattern in exclude_patterns):
             continue
+            
         filtered_features.append((feature_name, contribution))
     
     # Take top 7 features after filtering
@@ -172,10 +183,8 @@ def display_shap_contributions(shap_explanation, category, predicted_price):
     # Create a more readable format
     contribution_data = []
     for feature_name, contribution_rupees in top_filtered:
-        # Clean up feature names for display
         display_name = _clean_feature_name(feature_name)
         
-        # Determine impact direction
         if contribution_rupees > 0:
             impact = "📈 Increases"
             color = "🟢"

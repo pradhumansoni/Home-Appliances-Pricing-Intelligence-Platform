@@ -1,5 +1,5 @@
 # src/__init__.py
-from .bi_layer import (
+from .bi_layer_improved import (
     predict_price,
     get_shap_explanation,
     get_pricing_verdict,

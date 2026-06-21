@@ -32,7 +32,7 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 # Internal imports from your BI layer
-from src.bi_layer import build_feature_dataframe, _load_model
+from src.bi_layer_improved import build_feature_dataframe, _load_model
 
 # Relative file loading
 X_train_path = BASE_DIR / "models" / "dataset" / "X_train.parquet"
