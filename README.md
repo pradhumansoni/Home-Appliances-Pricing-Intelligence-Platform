@@ -1,6 +1,6 @@
-# 🏠 AI-Powered-Appliance-Pricing-Intelligence-Platform
+# 🏠 Home-Appliances-Pricing-Intelligence-Platform
 
-### AI-Powered Fair Price Prediction, Overpricing Detection & Smart Product Recommendations
+### Home Appliances Fair Price Prediction, Overpricing Detection & Smart Product Recommendations
 
 ![Python](https://img.shields.io/badge/Python-3.11+-blue)
 ![XGBoost](https://img.shields.io/badge/XGBoost-Regressor-green)
