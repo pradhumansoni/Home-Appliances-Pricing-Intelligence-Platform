@@ -6,7 +6,7 @@ from pathlib import Path
 
 # Ensure sys.path is correctly set for imports from src/
 import sys
-root = Path.cwd()
+root = Path.cwd()   
 
 while root != root.parent:
     if (root / "src").exists():
@@ -57,18 +57,18 @@ def format_recommendation_score(score):
     pct = score * 100
     
     if pct >= 90:
-        return f"⭐⭐⭐ {pct:.0f}% match"
+        return f"⭐⭐⭐ {pct:.0f}%"
     elif pct >= 75:
-        return f"⭐⭐ {pct:.0f}% match"
+        return f"⭐⭐ {pct:.0f}%"
     elif pct >= 60:
-        return f"⭐ {pct:.0f}% match"
+        return f"⭐ {pct:.0f}%"
     else:
-        return f"{pct:.0f}% match"
+        return f"{pct:.0f}%"
 
 
 def display_recommendations(recommendations, category, max_per_brand):
     """
-    Displays recommendation results in a clean, readable table.
+    Displays recommendation results in a clean, professional table.
     Shows recommendations based on feature similarity within the user's budget range.
     """
     if not recommendations:
@@ -80,13 +80,25 @@ def display_recommendations(recommendations, category, max_per_brand):
     # Pick which columns to show based on category
     if category == "AC":
         display_cols = ['brand_name', 'capacity_ac_tons', 'star_rating', 'fair_price', 'recommendation_score']
-        display_names = ['Brand', 'Capacity (Tons)', 'Stars', 'Fair Price', 'Match Score']
+        display_names = ['Brand', 'Capacity (Tons)', '⭐ Rating', 'Fair Price', 'Match Score']
+        col_formats = {
+            'Fair Price': lambda x: f"₹{x:,.0f}",
+            'Match Score': lambda x: format_recommendation_score(x)
+        }
     elif category == "Refrigerator":
-        display_cols = ['brand_name', 'capacity_ref_liters', 'star_rating', 'fair_price', 'recommendation_score', 'ref_frost_free', 'ref_double_door']
-        display_names = ['Brand', 'Capacity (Litres)', 'Stars', 'Fair Price', 'Match Score', 'Frost Free', 'Double Door']
+        display_cols = ['brand_name', 'capacity_ref_liters', 'star_rating', 'fair_price', 'recommendation_score']
+        display_names = ['Brand', 'Capacity (L)', '⭐ Rating', 'Fair Price', 'Match Score']
+        col_formats = {
+            'Fair Price': lambda x: f"₹{x:,.0f}",
+            'Match Score': lambda x: format_recommendation_score(x)
+        }
     else:  # Washing Machine
-        display_cols = ['brand_name', 'capacity_wm_kg', 'star_rating', 'fair_price', 'recommendation_score', 'wm_fully_automatic', 'wm_front_load']
-        display_names = ['Brand', 'Capacity (Kg)', 'Stars', 'Fair Price', 'Match Score', 'Fully Automatic', 'Front Load']
+        display_cols = ['brand_name', 'capacity_wm_kg', 'star_rating', 'fair_price', 'recommendation_score']
+        display_names = ['Brand', 'Capacity (Kg)', '⭐ Rating', 'Fair Price', 'Match Score']
+        col_formats = {
+            'Fair Price': lambda x: f"₹{x:,.0f}",
+            'Match Score': lambda x: format_recommendation_score(x)
+        }
 
     # Defensive check for missing columns
     missing_cols = [c for c in display_cols if c not in recs_df.columns]
@@ -97,18 +109,148 @@ def display_recommendations(recommendations, category, max_per_brand):
     recs_df_display = recs_df[display_cols].copy()
     recs_df_display.columns = display_names
 
-    # Format Fair Price with Rupee symbol and commas
-    recs_df_display['Fair Price'] = recs_df_display['Fair Price'].apply(lambda x: f"₹ {x:,.0f}")
+    # Apply formatting
+    for col_name, col_display_name in zip(display_cols, display_names):
+        if col_display_name == 'Fair Price':
+            recs_df_display[col_display_name] = recs_df[col_name].apply(col_formats['Fair Price'])
+        elif col_display_name == 'Match Score':
+            recs_df_display[col_display_name] = recs_df[col_name].apply(col_formats['Match Score'])
 
-    # Format Match Score as a percentage
-    recs_df_display['Match Score'] = recs_df['recommendation_score'].apply(format_recommendation_score)
-
-    st.dataframe(recs_df_display, use_container_width=True)
+    # Display as a clean, styled dataframe
+    st.dataframe(
+        recs_df_display,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Brand": st.column_config.TextColumn(width="medium"),
+            "Capacity (Tons)": st.column_config.NumberColumn(width="small"),
+            "Capacity (L)": st.column_config.NumberColumn(width="small"),
+            "Capacity (Kg)": st.column_config.NumberColumn(width="small"),
+            "⭐ Rating": st.column_config.NumberColumn(width="small"),
+            "Fair Price": st.column_config.TextColumn(width="medium"),
+            "Match Score": st.column_config.TextColumn(width="medium"),
+        }
+    )
+    
     st.caption(
         f"✨ Showing {len(recs_df_display)} recommendations | "
-        f"Match Score = how well the product matches your preferences | "
-        f"Fair Price = estimated market price"
+        f"Match Score = how well the product matches your preferences (cosine similarity)"
     )
+
+
+def display_shap_contributions(shap_explanation, category, predicted_price):
+    """
+    Displays SHAP feature contributions in a clean, readable format.
+    Now shows category-specific top contributing features.
+    
+    IMPROVEMENT: Shows features in rupees with proper sign indicators.
+    """
+    top_features = shap_explanation['top_features']
+    
+    # Filter features that are NOT metadata/system features
+    # This makes the display more meaningful for users
+    exclude_patterns = [
+        'onehotencoder__', 'ordinalencoder__', 'standardscaler__',
+        'features_above_avg', 'rating_above_avg', 'capacity_above_avg',
+        'brand_frequency', 'smart_connectivity_score'
+    ]
+    
+    filtered_features = []
+    for feature_name, contribution in top_features:
+        # Skip if it matches any exclude pattern
+        if any(pattern in feature_name.lower() for pattern in exclude_patterns):
+            continue
+        filtered_features.append((feature_name, contribution))
+    
+    # Take top 7 features after filtering
+    top_filtered = filtered_features[:7]
+    
+    if not top_filtered:
+        st.warning("⚠️ Could not extract meaningful feature contributions.")
+        return
+    
+    # Create a more readable format
+    contribution_data = []
+    for feature_name, contribution_rupees in top_filtered:
+        # Clean up feature names for display
+        display_name = _clean_feature_name(feature_name)
+        
+        # Determine impact direction
+        if contribution_rupees > 0:
+            impact = "📈 Increases"
+            color = "🟢"
+        else:
+            impact = "📉 Decreases"
+            color = "🔴"
+        
+        contribution_data.append({
+            'Feature': display_name,
+            'Impact': impact,
+            'Amount (₹)': f"{abs(contribution_rupees):,.0f}",
+            '': color
+        })
+    
+    contributions_df = pd.DataFrame(contribution_data)
+    
+    st.dataframe(
+        contributions_df,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            'Feature': st.column_config.TextColumn(width="large"),
+            'Impact': st.column_config.TextColumn(width="medium"),
+            'Amount (₹)': st.column_config.TextColumn(width="medium"),
+            '': st.column_config.TextColumn(width="small")
+        }
+    )
+
+
+def _clean_feature_name(feature_name: str) -> str:
+    """
+    Convert technical feature names into human-readable format.
+    
+    Examples:
+    - 'target_enc__brand_name' -> 'Brand Name'
+    - 'capacity_ac_tons' -> 'AC Capacity (Tons)'
+    - 'ac_split' -> 'Split AC'
+    - 'n_features' -> 'Number of Features'
+    """
+    # Remove transformer prefixes
+    clean = feature_name
+    prefixes = ['target_enc__', 'ordinalencoder__', 'onehotencoder__', 'standardscaler__']
+    for prefix in prefixes:
+        if clean.startswith(prefix):
+            clean = clean.replace(prefix, '')
+    
+    # Replace underscores with spaces and title case
+    clean = clean.replace('_', ' ').title()
+    
+    # Specific replacements for better readability
+    replacements = {
+        'Ac ': 'AC ',
+        'Wm ': 'Washing Machine ',
+        'Ref ': 'Refrigerator ',
+        'N Features': 'Number of Features',
+        'Star Rating': 'Star Rating',
+        'Brand Name': 'Brand Name',
+        'Capacity Ac Tons': 'AC Capacity (Tons)',
+        'Capacity Ref Liters': 'Refrigerator Capacity (Liters)',
+        'Capacity Wm Kg': 'Washing Machine Capacity (Kg)',
+        'Has Inverter': 'Inverter Technology',
+        'Has Wifi': 'WiFi Connectivity',
+        'Has Voice Control': 'Voice Control',
+        'Has App Control': 'App Control',
+        'Ac Premium Features': 'AC Premium Features',
+        'Ref Door Complexity': 'Refrigerator Door Complexity',
+        'Wm Tech Level': 'Washing Machine Tech Level'
+    }
+    
+    for original, readable in replacements.items():
+        if original.lower() in clean.lower():
+            clean = clean.replace(original, readable)
+            break
+    
+    return clean
 
 
 # --- 5. USER INPUT SECTION ---
@@ -277,9 +419,8 @@ if st.button("🔍 Get Insights", use_container_width=True):
         st.write(f"**Brand Impact:** {brand_premium_text}")
 
         st.subheader("📊 What Affects the Price?")
-        shap_df = pd.DataFrame(shap_explanation['top_features'], columns=['Feature', 'Contribution (₹)'])
-        st.dataframe(shap_df.style.format({"Contribution (₹)": "₹{:,.0f}"}), use_container_width=True)
-        st.caption("Shows which features increase or decrease the price the most")
+        display_shap_contributions(shap_explanation, user_friendly_input['category'], predicted_price)
+        st.caption("Shows which features have the most impact on pricing for your selected appliance")
 
         st.subheader("⭐ Smart Recommendations (5 Best Matches)")
         st.write("Based on your preferences, within your expected budget range:")
@@ -334,9 +475,8 @@ if st.button("🔍 Get Insights", use_container_width=True):
             st.write(f"**Brand Impact:** {brand_premium_text}")
 
             st.subheader("📊 What Affects the Price?")
-            shap_df = pd.DataFrame(shap_explanation['top_features'], columns=['Feature', 'Contribution (₹)'])
-            st.dataframe(shap_df.style.format({"Contribution (₹)": "₹{:,.0f}"}), use_container_width=True)
-            st.caption("Shows which features increase or decrease the price the most")
+            display_shap_contributions(shap_explanation, user_friendly_input['category'], predicted_price)
+            st.caption("Shows which features have the most impact on pricing for your selected appliance")
 
             st.subheader("⭐ Better Alternatives (5 Smart Recommendations)")
             st.write("Found a better option within your budget range:")

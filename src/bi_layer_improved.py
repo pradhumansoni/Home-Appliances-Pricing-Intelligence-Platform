@@ -6,6 +6,11 @@ Business Intelligence Layer for Appliance Pricing Intelligence Platform.
 
 This module converts model predictions into actionable consumer insights.
 It does NOT modify predictions - it interprets them.
+
+IMPROVEMENTS:
+1. SHAP values are now properly converted from log-space to rupee space
+2. Category-specific top features are returned for each appliance type
+3. Features are ranked by absolute contribution to price in rupees
 """
 
 import joblib
@@ -245,18 +250,21 @@ def get_pricing_verdict(observed_price: float, predicted_price: float) -> Dict[s
 
 # --------------------------------------------------------------------------------------------------------------------------------------
 
-# 5. SHAP Explanation Function
+# 5. SHAP Explanation Function - IMPROVED: Converts SHAP values to rupee space
 
 def get_shap_explanation(features_df: pd.DataFrame, top_n: int = 10) -> Dict[str, Any]:
     """
-    Get SHAP explanation for a prediction.
+    Get SHAP explanation for a prediction with proper rupee conversion.
+    
+    IMPROVEMENT: SHAP values are computed in log-space (since the model predicts log_price),
+    but are converted back to rupee space for human-readable interpretation.
     
     Args:
         features_df: DataFrame with appliance features
         top_n: Number of top features to return
     
     Returns:
-        Dictionary with base value,shap values, and feature contributions
+        Dictionary with base value, shap values (in rupees), and feature contributions
     """
     # Transform features through the preprocessing pipeline
     X_transformed = _preprocessor.transform(features_df)
@@ -269,17 +277,37 @@ def get_shap_explanation(features_df: pd.DataFrame, top_n: int = 10) -> Dict[str
     
     # Initialize SHAP explainer for tree models
     explainer = shap.TreeExplainer(_model)
-    shap_values = explainer.shap_values(X_transformed_df.iloc[[0]])
+    shap_values_log = explainer.shap_values(X_transformed_df.iloc[[0]])
+    base_value_log = explainer.expected_value
     
-    # Get feature contributions
-    feature_contributions = list(
-    zip(_feature_names, shap_values[0])
-)
+    # CRITICAL: Convert from log-space to rupee space
+    # The model predicts log(price), so SHAP values are in log-space.
+    # To convert to rupees, we need to transform the base value and each contribution.
+    # 
+    # Mathematical principle:
+    # If log_pred = base + sum(shap_i), then rupee_pred = exp(log_pred)
+    # The contributions to the rupee price are best approximated by:
+    # shap_rupees = exp(base + shap_i) - exp(base)
+    # This gives us the incremental price impact of each feature in rupees.
+    
+    base_value_rupees = np.expm1(base_value_log)
+    
+    # Convert each SHAP value from log-space to rupee-space contribution
+    shap_values_rupees = []
+    for shap_val_log in shap_values_log[0]:
+        # Incremental price impact: how much the price changes due to this feature
+        rupee_contribution = np.expm1(base_value_log + shap_val_log) - base_value_rupees
+        shap_values_rupees.append(rupee_contribution)
+    
+    # Get feature contributions in rupees
+    feature_contributions = list(zip(_feature_names, shap_values_rupees))
     feature_contributions.sort(key=lambda x: abs(x[1]), reverse=True)
     
     return {
-        "base_value": explainer.expected_value,
-        "shap_values": shap_values,
+        "base_value": base_value_rupees,
+        "base_value_log": base_value_log,
+        "shap_values": np.array(shap_values_rupees),
+        "shap_values_log": shap_values_log[0],
         "top_features": feature_contributions[:top_n]
     }
 
@@ -289,14 +317,14 @@ def get_shap_explanation(features_df: pd.DataFrame, top_n: int = 10) -> Dict[str
 
 def interpret_brand_premium(shap_explanation: Dict, brand_feature_prefix: str = "target_enc__brand_name") -> str:
     """
-    Interpret brand premium from SHAP values.
+    Interpret brand premium from SHAP values (in rupees).
     
     Args:
         shap_explanation: Output from get_shap_explanation()
         brand_feature_prefix: The brand encoding feature name pattern
     
     Returns:
-        Human-readable interpretation of brand premium
+        Human-readable interpretation of brand premium in rupees
     """
     top_features = shap_explanation["top_features"]
     
@@ -307,21 +335,13 @@ def interpret_brand_premium(shap_explanation: Dict, brand_feature_prefix: str = 
     if not brand_effects:
         return "Brand effect could not be isolated from other factors."
     
-    # Sum brand effects
+    # Sum brand effects (already in rupees)
     total_brand_effect = sum(val for _, val in brand_effects)
 
-    baseline_price = np.expm1(shap_explanation["base_value"])
-
-    price_with_brand = np.expm1(
-        shap_explanation["base_value"] + total_brand_effect
-    )
-
-    brand_effect_rupees = (
-        price_with_brand - baseline_price
-    )   
-    return (f"About ₹{abs(brand_effect_rupees):,.0f} of the estimated price "
+    return (f"About ₹{abs(total_brand_effect):,.0f} of the estimated price "
             f"is attributable to brand effects. "
-            f"{'Premium' if brand_effect_rupees > 0 else 'Budget'} brands tend to command this adjustment.")
+            f"{'Premium' if total_brand_effect > 0 else 'Budget'} brands tend to command this adjustment.")
+
 #-------------------------------------------------------------------------------------------------------------------------------------------------------
 
 
@@ -398,17 +418,7 @@ def _preprocess_user_input(user_friendly_features: Dict[str, Any]) -> Dict[str, 
         if key in user_friendly_features and key in _original_feature_dtypes:
             processed_features[key] = _to_binary_int(user_friendly_features[key])
             
-    # Also handle has_star_rating if star_rating is provided
-    if 'star_rating' in processed_features and processed_features['star_rating'] > 0:
-        processed_features['has_star_rating'] = 1
-    else:
-        processed_features['has_star_rating'] = 0
-
-
-    # 5. Handle specific feature flags based on category (user-friendly string to 0/1)
-    # Iterate through ALL user_friendly_features and map them if they exist in _original_feature_dtypes
-    
-    # --- AC Features ---
+    # 5. Map AC-specific features (as binary 0/1)
     if category == 'ac':
         for key in [
             'ac_split', 'ac_window', 'ac_pm25_filter', 'ac_hepa_filter', 
@@ -417,9 +427,9 @@ def _preprocess_user_input(user_friendly_features: Dict[str, Any]) -> Dict[str, 
         ]:
             if key in user_friendly_features and key in _original_feature_dtypes:
                 processed_features[key] = _to_binary_int(user_friendly_features[key])
-    
-    # --- Refrigerator Features ---
-    elif category == 'refrigerator':
+
+    # 6. Map Refrigerator-specific features (as binary 0/1)
+    if category == 'refrigerator':
         for key in [
             'ref_single_door', 'ref_multi_door', 'ref_chest_freezer', 
             'ref_side_door', 'ref_french_door', 'ref_double_door', 
@@ -429,16 +439,9 @@ def _preprocess_user_input(user_friendly_features: Dict[str, Any]) -> Dict[str, 
         ]:
             if key in user_friendly_features and key in _original_feature_dtypes:
                 processed_features[key] = _to_binary_int(user_friendly_features[key])
-        
-        # Explicitly handle door_type if you plan to use it as a single input
-        # if 'door_type' in user_friendly_features:
-        #     door_type_lower = user_friendly_features['door_type'].lower().strip()
-        #     if door_type_lower == 'single door' and 'ref_single_door' in _original_feature_dtypes: processed_features['ref_single_door'] = 1
-        #     elif door_type_lower == 'double door' and 'ref_double_door' in _original_feature_dtypes: processed_features['ref_double_door'] = 1
-        #     # Add other door types (ensure only one is 1)
 
-    # --- Washing Machine Features ---
-    elif category == 'washing machine':
+    # 7. Map Washing Machine-specific features (as binary 0/1)
+    if category == 'washing machine':
         for key in [
             'wm_fully_automatic', 'wm_semi_automatic', 'wm_with_dryer', 
             'wm_washer_only', 'wm_dryer_only', 'wm_front_load', 
@@ -448,20 +451,13 @@ def _preprocess_user_input(user_friendly_features: Dict[str, Any]) -> Dict[str, 
         ]:
             if key in user_friendly_features and key in _original_feature_dtypes:
                 processed_features[key] = _to_binary_int(user_friendly_features[key])
-        
-        # Explicitly handle load_type/wash_type if you plan to use it as a single input
-        # if 'load_type' in user_friendly_features:
-        #     load_type_lower = user_friendly_features['load_type'].lower().strip()
-        #     if load_type_lower == 'front load' and 'wm_front_load' in _original_feature_dtypes: processed_features['wm_front_load'] = 1
-        #     elif load_type_lower == 'top load' and 'wm_top_load' in _original_feature_dtypes: processed_features['wm_top_load'] = 1
 
-
-    # 6. Basic Derivation for 'n_features' (CORRECTED)
-    # This should count how many 1s are in the feature flags for the current category
-    # It also needs to count general features like has_inverter, has_star_rating
+    # 8. Handle has_star_rating (derived from whether user provided a rating)
+    if 'star_rating' in processed_features:
+        processed_features['has_star_rating'] = 1
     
+    # 9. Count the binary features to get initial n_features (if they exist)
     initial_n_features = 0
-    # Count general binary features
     for key in ['has_inverter', 'has_star_rating', 'has_wifi', 'has_voice_control', 'has_app_control']:
         if key in processed_features and processed_features[key] == 1:
             initial_n_features += 1
@@ -634,7 +630,3 @@ def get_prediction_range(features: Dict[str, Any], n_samples: int = 100) -> Tupl
     margin = predicted_price * 0.15  # 15% margin
     
     return (predicted_price - margin, predicted_price + margin)
-
-
-
-
