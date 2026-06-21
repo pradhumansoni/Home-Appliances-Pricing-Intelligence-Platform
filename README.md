@@ -324,7 +324,7 @@ git clone https://github.com/pradhumansoni/AI-Powered-Appliance-Pricing-Intellig
 Move into the project directory:
 
 ```bash
-cd AI-Powered-Appliance-Pricing-Intelligence-Platform
+cd AI-Powered-Appliance-Pricing-Intelligence-Platform/app
 ```
 
 Install dependencies:
