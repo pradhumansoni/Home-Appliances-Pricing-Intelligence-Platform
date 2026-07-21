@@ -9,7 +9,15 @@
 ![License](https://img.shields.io/badge/License-MIT-lightgrey)
 
 ---
+## 🚀 Live Demo
 
+### 🌐 Try the Application
+
+**https://home-appliances-pricing-intelligence-platform.streamlit.app/**
+
+> **Note:** The application may take 10–20 seconds to wake up if it has been idle on Streamlit Community Cloud.
+
+---
 ## 📌 Overview
 
 The Home Appliance Pricing Intelligence Platform is an end-to-end Machine Learning application that helps users determine whether a home appliance is fairly priced, overpriced, or underpriced based on its specifications.
